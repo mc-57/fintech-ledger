@@ -5,10 +5,7 @@ import com.example.account.dto.CreateAccountRequest;
 import com.example.account.model.Account;
 import com.example.account.service.AccountService;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import java.net.URI;
@@ -47,6 +44,25 @@ public class AccountController {
                 .toUri();
 
         return ResponseEntity.created(location).body(response);
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<AccountResponse> getAccountById(
+            @PathVariable Long id) {
+
+        Account account = accountService.getAccountById(id);
+
+        if (account == null) {
+            return ResponseEntity.notFound().build();
+        }
+
+        AccountResponse response = new AccountResponse(
+                account.id(),
+                account.ownerName(),
+                account.balance()
+        );
+
+        return ResponseEntity.ok().body(response);
     }
 
 }

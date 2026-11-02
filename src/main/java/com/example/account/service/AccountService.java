@@ -31,4 +31,8 @@ public class AccountService {
 
         return account;
     }
+
+    public Account getAccountById(Long id) {
+        return accounts.get(id);
+    }
 }
