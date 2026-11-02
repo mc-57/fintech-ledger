@@ -5,7 +5,9 @@ import com.example.account.model.Account;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -34,5 +36,14 @@ public class AccountService {
 
     public Account getAccountById(Long id) {
         return accounts.get(id);
+    }
+
+    public List<Account> getAllAccounts(){
+        List<Account> accountList = accounts.values()
+                .stream()
+                .sorted(Comparator.comparing(Account::id))
+                .toList();
+
+        return accountList;
     }
 }

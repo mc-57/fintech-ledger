@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import java.net.URI;
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/accounts")
@@ -63,6 +64,23 @@ public class AccountController {
         );
 
         return ResponseEntity.ok().body(response);
+    }
+
+    @GetMapping
+    public ResponseEntity<List<AccountResponse>> getAllAccounts() {
+
+        List<Account> accounts = accountService.getAllAccounts();
+
+        // Convert each Account into AccountResponse
+        List<AccountResponse> responses = accounts.stream()
+                .map(account -> new AccountResponse(
+                        account.id(),
+                        account.ownerName(),
+                        account.balance()
+                ))
+                .toList();
+
+        return ResponseEntity.ok(responses);
     }
 
 }
