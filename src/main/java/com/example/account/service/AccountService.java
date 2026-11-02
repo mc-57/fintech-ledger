@@ -1,7 +1,9 @@
 package com.example.account.service;
 
 import com.example.account.dto.CreateAccountRequest;
+import com.example.account.dto.DepositRequest;
 import com.example.account.model.Account;
+import com.example.account.exception.AccountNotFoundException;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -45,5 +47,28 @@ public class AccountService {
                 .toList();
 
         return accountList;
+    }
+
+    public Account deposit(Long accountId, DepositRequest request) {
+
+        // Retrieve account
+        Account account = accounts.get(accountId);
+
+        if (account == null) {
+            throw new AccountNotFoundException(accountId);
+        }
+
+        // Calculate new balance
+        BigDecimal newBalance = account.balance().add(request.amount());
+        // Create updated account w new balance
+        Account updatedAccount = new Account(
+                account.id(),
+                account.ownerName(),
+                newBalance
+        );
+        // Replace old account
+        accounts.put(accountId, updatedAccount);
+
+        return updatedAccount;
     }
 }

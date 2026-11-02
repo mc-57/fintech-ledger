@@ -2,8 +2,10 @@ package com.example.account.controller;
 
 import com.example.account.dto.AccountResponse;
 import com.example.account.dto.CreateAccountRequest;
+import com.example.account.dto.DepositRequest;
 import com.example.account.model.Account;
 import com.example.account.service.AccountService;
+import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
@@ -81,6 +83,22 @@ public class AccountController {
                 .toList();
 
         return ResponseEntity.ok(responses);
+    }
+
+    @PostMapping("/{id}/deposits")
+    public ResponseEntity<AccountResponse> deposit(
+            @PathVariable Long id,
+            @Valid @RequestBody DepositRequest request) {
+
+        Account account = accountService.deposit(id, request);
+
+        AccountResponse response = new AccountResponse(
+                account.id(),
+                account.ownerName(),
+                account.balance()
+        );
+
+        return ResponseEntity.ok(response);
     }
 
 }
