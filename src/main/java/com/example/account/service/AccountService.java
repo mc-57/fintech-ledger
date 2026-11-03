@@ -71,4 +71,8 @@ public class AccountService {
 
         return updatedAccount;
     }
+
+    public void updateAccount(Account account) {
+        accounts.put(account.id(), account);
+    }
 }
