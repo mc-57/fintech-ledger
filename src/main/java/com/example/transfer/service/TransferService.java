@@ -6,9 +6,16 @@ import com.example.account.service.AccountService;
 import com.example.transfer.dto.TransferRequest;
 import com.example.transfer.exception.InsufficientFundsException;
 import com.example.transfer.exception.InvalidAccountTransferException;
+import com.example.transfer.model.Transfer;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Handles transfers between ledger accounts.
@@ -19,16 +26,28 @@ import java.math.BigDecimal;
 public class TransferService {
 
     private final AccountService accountService;
+    // TransferService owns the transfer records, while AccountService owns the accounts.
+    private final Map<Long, Transfer> transfers = new HashMap<>();
+    private final AtomicLong nextTransferId = new AtomicLong(1);
 
     public TransferService(AccountService accountService) {
         this.accountService = accountService;
     }
 
-    public void transfer(TransferRequest request) {
+    public Transfer transfer(TransferRequest request) {
 
         Account sender = accountService.getAccountById(request.fromAccountId());
-
         Account recipient = accountService.getAccountById(request.toAccountId());
+
+        validateTransfer(sender, recipient, request);
+
+        updateBalances(sender, recipient, request.amount());
+
+        return createTransferRecord(request);
+
+    }
+
+    private void validateTransfer(Account sender, Account recipient, TransferRequest request) {
 
         if (sender == null) {
             throw new AccountNotFoundException(request.fromAccountId());
@@ -50,8 +69,12 @@ public class TransferService {
             );
         }
 
-        BigDecimal senderBalance = sender.balance().subtract(request.amount());
-        BigDecimal recipientBalance = recipient.balance().add(request.amount());
+    }
+
+    private void updateBalances(Account sender, Account recipient, BigDecimal amount){
+
+        BigDecimal senderBalance = sender.balance().subtract(amount);
+        BigDecimal recipientBalance = recipient.balance().add(amount);
 
         Account updatedSender = new Account(
                 sender.id(),
@@ -69,6 +92,36 @@ public class TransferService {
         // A failure between these in-memory writes can leave balances inconsistent.
         accountService.updateAccount(updatedSender);
         accountService.updateAccount(updatedRecipient);
+    };
 
+    private Transfer createTransferRecord(TransferRequest request){
+
+        Long transferId = nextTransferId.getAndIncrement();
+
+        Transfer record = new Transfer(
+                transferId,
+                request.fromAccountId(),
+                request.toAccountId(),
+                request.amount(),
+                Instant.now()
+        );
+
+        transfers.put(transferId, record);
+
+        return record;
+    };
+
+    public Transfer getTransferById(Long id){
+        return transfers.get(id);
     }
+
+    public List<Transfer> getAllTransfers(){
+
+        return transfers.values()
+                .stream()
+                .sorted(Comparator.comparing(Transfer::id))
+                .toList();
+    }
+
+
 }

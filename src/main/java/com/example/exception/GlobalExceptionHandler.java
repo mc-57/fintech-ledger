@@ -3,6 +3,7 @@ package com.example.exception;
 import com.example.account.exception.AccountNotFoundException;
 import com.example.transfer.exception.InsufficientFundsException;
 import com.example.transfer.exception.InvalidAccountTransferException;
+import com.example.transfer.exception.TransferNotFoundException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -70,5 +71,18 @@ public class GlobalExceptionHandler {
         );
 
         return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
+    }
+
+    @ExceptionHandler(TransferNotFoundException.class)
+    public ResponseEntity<ApiError> handleTransferNotFound(
+            TransferNotFoundException ex) {
+
+        ApiError response = new ApiError(
+                404,
+                "TRANSFER_RECORD_NOT_FOUND",
+                ex.getMessage()
+        );
+
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
     }
 }
