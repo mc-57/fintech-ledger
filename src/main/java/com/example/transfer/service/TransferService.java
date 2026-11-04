@@ -10,6 +10,7 @@ import com.example.transfer.exception.InvalidAccountTransferException;
 import com.example.transfer.exception.TransferNotFoundException;
 import com.example.transfer.model.Transfer;
 import com.example.transfer.repository.TransferRepository;
+import jakarta.transaction.Transactional;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -33,6 +34,16 @@ public class TransferService {
         this.transferRepository = transferRepository;
     }
 
+    /**
+     * Transfers funds between two accounts.
+     * Debit, credit, and transfer recording are executed
+     * within a single database transaction.
+     *
+     * NOTE: @Transactional ensures atomicity but does not automatically
+     * prevent lost updates from concurrent transfers.
+     * TODO(TRF): Introduce database locking or optimistic concurrency control.
+     */
+    @Transactional
     public Transfer transfer(TransferRequest request) {
 
         Account sender = accountService.getAccountById(request.fromAccountId());
@@ -40,11 +51,9 @@ public class TransferService {
 
         validateTransfer(sender, recipient, request);
 
-        // TODO(DB-06): Make debit, credit, and transfer recording atomic.
-        // Currently, separate database operations can commit independently.
         updateBalances(sender, recipient, request.amount());
 
-        return createTransferRecord(request);
+         return createTransferRecord(request);
 
     }
 
