@@ -40,4 +40,8 @@ public class AccountEntity {
     public BigDecimal getBalance() {
         return balance;
     }
+
+    public void updateBalance(BigDecimal newBalance) {
+        this.balance = newBalance;
+    }
 }

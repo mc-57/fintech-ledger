@@ -2,77 +2,95 @@ package com.example.account.service;
 
 import com.example.account.dto.CreateAccountRequest;
 import com.example.account.dto.DepositRequest;
+import com.example.account.entity.AccountEntity;
 import com.example.account.model.Account;
 import com.example.account.exception.AccountNotFoundException;
+import com.example.account.repository.AccountRepository;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicLong;
 
 @Service
 public class AccountService {
 
-    private final Map<Long, Account> accounts = new HashMap<>();
-    private final AtomicLong nextId = new AtomicLong(1);
+    private final AccountRepository accountRepository;
 
-    // Creates an account with a generated ID and zero balance,
-    // then stores it in memory.
+    public AccountService(AccountRepository accountRepository){
+        this.accountRepository = accountRepository;
+    }
+
     public Account createAccount(CreateAccountRequest request) {
 
-        Long id = nextId.getAndIncrement();
-
-        Account account = new Account(
-                id,
+        AccountEntity accountEntity = new AccountEntity(
                 request.ownerName(),
                 BigDecimal.ZERO
         );
 
-        accounts.put(id, account);
+        AccountEntity savedAccount = accountRepository.save(accountEntity);
 
-        return account;
+        return toDomain(savedAccount);
     }
 
     public Account getAccountById(Long id) {
-        return accounts.get(id);
+
+        AccountEntity accountEntity = accountRepository.findById(id)
+                .orElseThrow(() -> new AccountNotFoundException(id));
+
+        return toDomain(accountEntity);
     }
 
     public List<Account> getAllAccounts(){
-        List<Account> accountList = accounts.values()
-                .stream()
+
+        List<AccountEntity> accountEntities = accountRepository.findAll();
+
+        return accountEntities.stream()
+                .map(this::toDomain)
                 .sorted(Comparator.comparing(Account::id))
                 .toList();
-
-        return accountList;
     }
 
     public Account deposit(Long accountId, DepositRequest request) {
 
-        // Retrieve account
-        Account account = accounts.get(accountId);
+        AccountEntity accountEntity = accountRepository.findById(accountId)
+                .orElseThrow(() -> new AccountNotFoundException(accountId));
 
-        if (account == null) {
-            throw new AccountNotFoundException(accountId);
-        }
+        BigDecimal newBalance = accountEntity.getBalance().add(request.amount());
 
-        // Calculate new balance
-        BigDecimal newBalance = account.balance().add(request.amount());
-        // Create updated account w new balance
-        Account updatedAccount = new Account(
-                account.id(),
-                account.ownerName(),
-                newBalance
-        );
-        // Replace old account
-        accounts.put(accountId, updatedAccount);
+        accountEntity.updateBalance(newBalance);
 
-        return updatedAccount;
+        // NOTE: With @Transactional, JPA tracks changes to managed entities
+        // and persists them automatically through dirty checking.
+        // An explicit save() is not required in that case.
+        AccountEntity savedAccount = accountRepository.save(accountEntity);
+
+        return toDomain(savedAccount);
     }
 
+    /**
+     * Updates account data after a transfer operation.
+     * TransferService owns the transfer business logic, while
+     * AccountService manages access to account data.
+     */
     public void updateAccount(Account account) {
-        accounts.put(account.id(), account);
+
+        AccountEntity accountEntity = accountRepository.findById(account.id())
+                .orElseThrow(() -> new AccountNotFoundException(account.id()));
+
+        accountEntity.updateBalance(account.balance());
+
+        // NOTE: An explicit save() persists the update in our current design.
+        // With a service-level @Transactional, JPA dirty checking can persist
+        // changes to managed entities without an explicit save().
+        accountRepository.save(accountEntity);
+    }
+
+    private Account toDomain(AccountEntity entity) {
+        return new Account(
+                entity.getId(),
+                entity.getOwnerName(),
+                entity.getBalance()
+        );
     }
 }

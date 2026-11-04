@@ -88,8 +88,8 @@ public class TransferService {
                 recipientBalance
         );
 
-        // TODO: Make both balance updates atomic with a database transaction.
-        // A failure between these in-memory writes can leave balances inconsistent.
+        // TODO(DB): Wrap debit, credit, and transfer recording in one
+        // database transaction to prevent partial transfers.
         accountService.updateAccount(updatedSender);
         accountService.updateAccount(updatedRecipient);
     };
