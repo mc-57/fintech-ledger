@@ -6,6 +6,8 @@ import com.example.transfer.exception.TransferNotFoundException;
 import com.example.transfer.model.Transfer;
 import com.example.transfer.service.TransferService;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
@@ -25,9 +27,16 @@ public class TransferController {
 
     @PostMapping
     public ResponseEntity<TransferResponse> transfer(
+            @RequestHeader("Idempotency-Key")
+            @NotBlank(message = "Idempotency-Key must not be blank")
+            @Pattern(
+                    regexp = "[A-Za-z0-9][A-Za-z0-9_-]{0,127}",
+                    message = "Idempotency-Key contains invalid characters"
+            )
+            String idempotencyKey,
             @Valid @RequestBody TransferRequest request) {
 
-        Transfer record = transferService.transfer(request);
+        Transfer record = transferService.transfer(idempotencyKey, request);
 
         TransferResponse response = new TransferResponse(
                 record.id(),
