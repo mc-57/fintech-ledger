@@ -57,14 +57,20 @@ public class TransferService {
      * An identical retry returns the original transfer without
      * updating account balances again.
      *
-     * @Transactional keeps balance updates, transfer creation,
-     * and idempotency recording in one database transaction.
+     * @Transactional ensures balance updates, transfer creation,
+     * and idempotency recording commit or roll back together.
      *
      * LIMITATIONS:
      * - Only completed transfers are recorded; no IN_PROGRESS state.
-     * - Expired keys are rejected until safe reuse is implemented.
-     * - Concurrent requests need atomic key reservation.
-     * - Concurrent balance updates need database locking.
+     * - Expired keys are rejected while their records still exist.
+     * - Scheduled cleanup removes expired records every hour.
+     * - After cleanup, a late retry may execute a new transfer because
+     *   the original idempotency key is no longer stored.
+     * - Concurrent requests need atomic idempotency key reservation.
+     * - Concurrent balance updates still need database locking.
+     *
+     * TODO: Consider a persistent business-level operation ID to
+     * detect duplicate transfers beyond the idempotency retention window.
      */
     @Transactional
     public Transfer transfer(String idempotencyKey, TransferRequest request) {
@@ -77,9 +83,8 @@ public class TransferService {
         if (existing.isPresent()) {
             TransferIdempotencyEntity record = existing.get();
 
-            // Expiration does not automatically remove the database row.
+            // An expired record may remain until the scheduled cleanup runs.
             if (!Instant.now().isBefore(record.getExpiresAt())) {
-                // TODO(TRF): Implement safe expiration cleanup and key reuse.
                 throw new IdempotencyConflictException(
                         "Idempotency key has expired and cannot currently be reused"
                 );
@@ -104,7 +109,7 @@ public class TransferService {
 
         Transfer transfer = createTransferRecord(request);
 
-        // Save the key in the same transaction as the money movement.
+        // Persist the idempotency record in the same database transaction.
         saveIdempotencyRecord(idempotencyKey, fingerprint, transfer.id());
 
         return transfer;
