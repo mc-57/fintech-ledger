@@ -86,6 +86,21 @@ public class AccountService {
         accountRepository.save(accountEntity);
     }
 
+    /**
+     * Retrieves an account while acquiring a database write lock.
+     *
+     * The lock prevents another transaction from modifying this
+     * account until the current transaction commits or roll back.
+     *
+     * NOTE: Must be called within an active transaction.
+     */
+    public Account getAccountByIdForUpdate(Long id) {
+        AccountEntity entity = accountRepository.findByIdForUpdate(id)
+                .orElseThrow(() -> new AccountNotFoundException(id));
+
+        return toDomain(entity);
+    }
+
     private Account toDomain(AccountEntity entity) {
         return new Account(
                 entity.getId(),

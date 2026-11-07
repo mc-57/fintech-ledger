@@ -1,6 +1,5 @@
 package com.example.transfer.service;
 
-import com.example.account.exception.AccountNotFoundException;
 import com.example.account.model.Account;
 import com.example.account.service.AccountService;
 import com.example.transfer.dto.TransferRequest;
@@ -100,10 +99,27 @@ public class TransferService {
             return getTransferById(record.getTransferId());
         }
 
-        Account sender = accountService.getAccountById(request.fromAccountId());
-        Account recipient = accountService.getAccountById(request.toAccountId());
+        List<Account> lockedAccounts = getLockedAccounts(
+                request.fromAccountId(),
+                request.toAccountId()
+        );
+
+        Account sender = lockedAccounts.get(0);
+        Account recipient = lockedAccounts.get(1);
 
         validateTransfer(sender, recipient, request);
+
+        /*
+         * TEST ONLY — TRF-05: Reproduce concurrent transfer race conditions.
+         * Uncomment only for local concurrency testing.
+         *
+        try {
+            Thread.sleep(5000);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Transfer test interrupted", e);
+        }
+        */
 
         updateBalances(sender, recipient, request.amount());
 
@@ -113,6 +129,28 @@ public class TransferService {
         saveIdempotencyRecord(idempotencyKey, fingerprint, transfer.id());
 
         return transfer;
+    }
+
+    /**
+     * Locks both accounts in asc ID order to reduce deadlock risk.
+     *
+     * NOTE: Locks are held until the enclosing transaction finishes.
+     * TODO(TRF): Add lock timeouts and concurrency integration tests.
+     */
+    private List<Account> getLockedAccounts(
+            Long fromAccountId,
+            Long toAccountId) {
+
+        Long firstId = Math.min(fromAccountId, toAccountId);
+        Long secondId = Math.max(fromAccountId, toAccountId);
+
+        Account first = accountService.getAccountByIdForUpdate(firstId);
+        Account second = accountService.getAccountByIdForUpdate(secondId);
+
+        // Return accounts in their original sender/recipient order.
+        return fromAccountId.equals(firstId)
+                ? List.of(first, second)
+                : List.of(second, first);
     }
 
     private void validateTransfer(Account sender, Account recipient, TransferRequest request) {
