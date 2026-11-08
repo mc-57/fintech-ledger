@@ -6,6 +6,7 @@ import com.example.account.entity.AccountEntity;
 import com.example.account.model.Account;
 import com.example.account.exception.AccountNotFoundException;
 import com.example.account.repository.AccountRepository;
+import jakarta.transaction.Transactional;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -51,18 +52,33 @@ public class AccountService {
                 .toList();
     }
 
+    /**
+     * Deposits funds using pessimistic row-level locking.
+     *
+     * @Transactional keeps the balance update within one transaction.
+     * PESSIMISTIC_WRITE prevents conflicting updates while the row is locked.
+     *
+     * LIMITATIONS:
+     * - Concurrent requests may wait for database locks.
+     * - Lock timeout handling is not yet implemented.
+     * - Deposits currently lack a durable deposit transaction record
+     *   and idempotency protection.
+     *
+     * TODO: Add automated concurrency integration tests.
+     */
+    @Transactional
     public Account deposit(Long accountId, DepositRequest request) {
 
-        AccountEntity accountEntity = accountRepository.findById(accountId)
+        // Lock the account before readings its balance.
+        AccountEntity accountEntity = accountRepository.findByIdForUpdate(accountId)
                 .orElseThrow(() -> new AccountNotFoundException(accountId));
 
         BigDecimal newBalance = accountEntity.getBalance().add(request.amount());
 
         accountEntity.updateBalance(newBalance);
 
-        // NOTE: With @Transactional, JPA tracks changes to managed entities
-        // and persists them automatically through dirty checking.
-        // An explicit save() is not required in that case.
+        // No explicit save() required: JPA dirty checking persists
+        // changes to this managed entity within the transaction.
         AccountEntity savedAccount = accountRepository.save(accountEntity);
 
         return toDomain(savedAccount);
