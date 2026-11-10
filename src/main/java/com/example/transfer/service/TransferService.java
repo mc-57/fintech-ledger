@@ -72,6 +72,13 @@ public class TransferService {
         String fingerprint = generateFingerprint(request);
         Instant now = Instant.now();
 
+        // Validate inexpensive business rules before acquiring database resources.
+        if (request.fromAccountId().equals(request.toAccountId())){
+            throw new InvalidAccountTransferException(
+                    "Sender and recipient accounts must be different"
+            );
+        }
+
         // Atomically claim the key using PostgreSQL's UNIQUE constraint.
         // 1 = reserved successfully; 0 = key already exists.
         int reserved = idempotencyRepository.reserveKey(
@@ -170,6 +177,15 @@ public class TransferService {
             Long fromAccountId,
             Long toAccountId) {
 
+        // Defensive check: Prevent locking the same account twice.
+        // Cause: Internal programming-contract violation
+        // NOTE: public API continues using InvalidAccountTransferException
+        if (fromAccountId.equals(toAccountId)) {
+            throw new IllegalArgumentException(
+                    "Account IDs must be different when acquiring transfer locks"
+            );
+        }
+
         Long firstId = Math.min(fromAccountId, toAccountId);
         Long secondId = Math.max(fromAccountId, toAccountId);
 
@@ -183,12 +199,6 @@ public class TransferService {
     }
 
     private void validateTransfer(Account sender, Account recipient, TransferRequest request) {
-
-        if (sender.id().equals(recipient.id())) {
-            throw new InvalidAccountTransferException(
-                    "Sender and recipient accounts must be different"
-            );
-        }
 
         if (sender.balance().compareTo(request.amount()) < 0) {
             throw new InsufficientFundsException(
