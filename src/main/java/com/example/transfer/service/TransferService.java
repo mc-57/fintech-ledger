@@ -24,7 +24,6 @@ import java.time.Instant;
 import java.util.Comparator;
 import java.util.HexFormat;
 import java.util.List;
-import java.util.Optional;
 
 /**
  * Handles money transfers between ledger accounts.
@@ -51,52 +50,39 @@ public class TransferService {
     }
 
     /**
-     * Executes a transfer with persistent idempotency.
+     * Executes a transfer with persistent, concurrency-safe idempotency.
      *
-     * An identical retry returns the original transfer without
-     * updating account balances again.
+     * Atomically reserves the idempotency key before transferring funds.
+     * An identical retry returns the original transfer without changing balances.
      *
-     * @Transactional ensures balance updates, transfer creation,
+     * @Transactional ensures reservation, balance updates, transfer creation,
      * and idempotency recording commit or roll back together.
      *
      * LIMITATIONS:
-     * - Only completed transfers are recorded; no IN_PROGRESS state.
-     * - Expired keys are rejected while their records still exist.
-     * - Scheduled cleanup removes expired records every hour.
-     * - After cleanup, a late retry may execute a new transfer because
-     *   the original idempotency key is no longer stored.
-     * - Concurrent requests need atomic idempotency key reservation.
-     * - Concurrent balance updates still need database locking.
+     * - Expired keys are rejected until scheduled cleanup removes them.
+     * - A retry after cleanup may create a new transfer.
+     * - Competing requests may wait for the database transaction to finish.
      *
-     * TODO: Consider a persistent business-level operation ID to
-     * detect duplicate transfers beyond the idempotency retention window.
+     * TODO: Consider a persistent business-level operation ID to detect duplicate transfers beyond the idempotency retention window.
+     * TODO: Add automated concurrency integration tests.
      */
     @Transactional
     public Transfer transfer(String idempotencyKey, TransferRequest request) {
 
         String fingerprint = generateFingerprint(request);
+        Instant now = Instant.now();
 
-        Optional<TransferIdempotencyEntity> existing =
-                idempotencyRepository.findByIdempotencyKey(idempotencyKey);
+        // Atomically claim the key using PostgreSQL's UNIQUE constraint.
+        // 1 = reserved successfully; 0 = key already exists.
+        int reserved = idempotencyRepository.reserveKey(
+                idempotencyKey,
+                fingerprint,
+                now,
+                now.plus(IDEMPOTENCY_TTL)
+        );
 
-        if (existing.isPresent()) {
-            TransferIdempotencyEntity record = existing.get();
-
-            // An expired record may remain until the scheduled cleanup runs.
-            if (!Instant.now().isBefore(record.getExpiresAt())) {
-                throw new IdempotencyConflictException(
-                        "Idempotency key has expired and cannot currently be reused"
-                );
-            }
-
-            if (!record.getRequestFingerprint().equals(fingerprint)) {
-                throw new IdempotencyConflictException(
-                        "Idempotency key already used with different request data"
-                );
-            }
-
-            // Identical retry: no second transfer or balance update.
-            return getTransferById(record.getTransferId());
+        if(reserved == 0) {
+           return handleExistingIdempotencyKey(idempotencyKey, fingerprint);
         }
 
         List<Account> lockedAccounts = getLockedAccounts(
@@ -109,26 +95,69 @@ public class TransferService {
 
         validateTransfer(sender, recipient, request);
 
-        /*
-         * TEST ONLY — TRF-05: Reproduce concurrent transfer race conditions.
-         * Uncomment only for local concurrency testing.
-         *
-        try {
-            Thread.sleep(5000);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IllegalStateException("Transfer test interrupted", e);
-        }
-        */
-
         updateBalances(sender, recipient, request.amount());
 
         Transfer transfer = createTransferRecord(request);
 
-        // Persist the idempotency record in the same database transaction.
-        saveIdempotencyRecord(idempotencyKey, fingerprint, transfer.id());
+        // Complete the existing reservation instead of inserting another record.
+        completeIdempotencyReservation(idempotencyKey, transfer.id());
 
         return transfer;
+    }
+
+    /**
+     *
+     * Handles retries when the idempotency key is already reserved.
+     */
+    private Transfer handleExistingIdempotencyKey(
+            String idempotencyKey,
+            String fingerprint) {
+
+        TransferIdempotencyEntity record = idempotencyRepository
+                .findByIdempotencyKey(idempotencyKey)
+                .orElseThrow(() -> new IllegalStateException(
+                        "Existing idempotency reservation could not be found"
+                ));
+
+        if (!Instant.now().isBefore(record.getExpiresAt())) {
+            throw new IdempotencyConflictException(
+                    "Idempotency key has expired and cannot currently be reused"
+            );
+        }
+
+        if (!record.getRequestFingerprint().equals(fingerprint)) {
+            throw new IdempotencyConflictException(
+                    "Idempotency key already used with different request data"
+            );
+        }
+
+        // A committed reservation should reference a completed transfer.
+        if (record.getTransferId() == null) {
+            throw new IllegalStateException(
+                    "Idempotency record has no completed transfer"
+            );
+        }
+
+        return getTransferById(record.getTransferId());
+    }
+
+    /**
+     * Associates the completed transfer with its reserved idempotency key.
+     *
+     * The entity is managed by JPA, so dirty checking persists the
+     * transfer ID when the transaction commits.
+     */
+    private void completeIdempotencyReservation(
+            String idempotencyKey,
+            Long transferId) {
+
+        TransferIdempotencyEntity record = idempotencyRepository.findByIdempotencyKey(idempotencyKey)
+                .orElseThrow(() -> new IllegalStateException(
+                        "Reserved idempotency key not found"
+                )); // defensive check for unexpected state that breaks the reservation flow.
+
+        record.complete(transferId);
+        // JPA dirty checking persists this change at transaction commit.
     }
 
     /**
@@ -201,31 +230,6 @@ public class TransferService {
         TransferEntity savedTransfer = transferRepository.save(entity);
 
         return toDomain(savedTransfer);
-    }
-
-    /**
-     * Stores an idempotency record linked to a completed transfer.
-     * The record expires 24 hours after it is created.
-     *
-     * NOTE: Expiration does not automatically delete the database row.
-     */
-    private void saveIdempotencyRecord(
-            String idempotencyKey,
-            String fingerprint,
-            Long transferId) {
-
-        Instant now = Instant.now();
-        Instant expiresAt = now.plus(IDEMPOTENCY_TTL);
-
-        TransferIdempotencyEntity entity = new TransferIdempotencyEntity(
-                idempotencyKey,
-                fingerprint,
-                transferId,
-                now,
-                expiresAt
-        );
-
-        idempotencyRepository.save(entity);
     }
 
     public Transfer getTransferById(Long id){

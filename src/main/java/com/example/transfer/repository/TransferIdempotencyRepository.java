@@ -20,4 +20,18 @@ public interface TransferIdempotencyRepository
     WHERE r.expiresAt <= :now
     """)
     int deleteExpiredRecords(@Param("now") Instant now);
+
+    @Modifying
+    @Query(value = """
+        INSERT INTO transfer_idempotency
+            (idempotency_key, request_fingerprint, created_at, expires_at)
+        VALUES (:key, :fingerprint, :createdAt, :expiresAt)
+        ON CONFLICT (idempotency_key) DO NOTHING
+        """, nativeQuery = true) // the database checks uniqueness and inserts atomically.
+    int reserveKey(
+            @Param("key") String key,
+            @Param("fingerprint") String fingerprint,
+            @Param("createdAt") Instant createdAt,
+            @Param("expiresAt") Instant expiresAt
+    );
 }

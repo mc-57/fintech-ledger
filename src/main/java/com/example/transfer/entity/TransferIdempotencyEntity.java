@@ -26,7 +26,7 @@ public class TransferIdempotencyEntity {
             length = 64)
     private String requestFingerprint;
 
-    @Column(name = "transfer_id", nullable = false)
+    @Column(name = "transfer_id")
     private Long transferId;
 
     @Column(name = "created_at", nullable = false)
@@ -57,5 +57,6 @@ public class TransferIdempotencyEntity {
     public Long getTransferId() { return transferId; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getExpiresAt() { return expiresAt; }
+    public void complete(Long transferId) { this.transferId = transferId; }
 
 }
