@@ -13,6 +13,7 @@ transactional correctness and concurrency safety.
 - Spring Data JPA/Hibernate - database access and entity mapping
 - Flyway - versioned schema migrations
 - Maven, Postman, Git - build workflow, manual API verification, version control
+- JUnit 5, Mockito, Testcontainers - unit tests and PostgreSQL integration tests
 
 ## ✅ Implemented features
 
@@ -65,30 +66,38 @@ Existing records remain reserved for 24 hours; expired records are deleted by a 
 
 **1. Transaction boundaries**. Debit, credit, transfer history, and idempotency reservation completion
 share a transaction. A failed operation rolls back the whole unit of work.
+
 **2. Pessimistic locking for balances**. Transfers acquire affected account locks in ascending ID order
 to reduce deadlock risk; deposits lock the account being modified. This addresses lost updates under
 concurrent operations.
+
 **3. Atomic idempotency-key reservation**. A check-then-insert sequence is vulnerable to a race. 
 PostgreSQL's unique constraint and `ON CONFLICT DO NOTHING` coordinate competing inserts, including
 across multiple application instances sharing a database.
+
 **4. Replay versus duplication**. An identical retry returns the stored transfer ID. A mismatched payload
 produces a conflict. If the initial transaction fails, its reservation rolls back and the key can be reserved again.
 
-## 🧪 Manual verification performed
+## 🧪 Testing
+
+**Automated tests**
+- **Unit (JUnit 5 + Mockito):** successful transfers, insufficient funds, self-transfer rejection, idempotency conflicts, and identical-request replay.
+- **PostgreSQL integration (Spring Boot + Testcontainers):** committed balance updates, rollback on transfer-recording failure, persisted transfer/idempotency linkage, and expired-key cleanup that preserves transfer history.
+
+**Manual concurrency verification**
 
 - Reproduced a lost-update issue with concurrent transfers before adding row locks; verified locking prevented the inconsistent outcome.
-- Verified concurrent deposits and simultaneous deposit/transfer operations preserve expected balances.
-- Verified two simultaneous requests using the same idempotency key and identical payload returned the same transfer ID with one committed transfer.
+- Verified concurrent deposits and simultaneous deposit/transfer operations preserver expected balances.
+- Verified two simultaneous requests using the same idempotency key and identical payload returned the same transfer ID with one commited transfer.
 - Verified that the same key with a different payload produces an idempotency conflict.
-- Verified that an unsuccessful transfer rolls back its idempotency reservation.
-- Verified that completed idempotency records reference a non-null `transfer_id`.
 
-> These are **manual tests**. Repeatable automated PostgreSQL integration and concurrency tests are planned.
+> Manual concurrency scenarios have been exercised; repeatable **automated concurrency tests** are 
+> still planned. Integration tests use a temporary real PostgreSQL database, not the development database.
 
 ## 🗺️ Current limitations and roadmap
 
 ### Near-term priorities
-- Automated unit, PostgreSQL integration, and concurrency tests
+- Automated concurrency tests for concurrent transfers, deposits, and same-key requests
 - Deposit history and idempotent deposits
 - Pagination for list endpoints
 - Docker Compose and GitHub Actions CI
