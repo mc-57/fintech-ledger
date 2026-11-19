@@ -1,0 +1,33 @@
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: fintech_ledger_dev
+      POSTGRES_USER: ledger_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ledger_user -d fintech_ledger_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    image: fintech-ledger:dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/fintech_ledger_dev
+      DB_USERNAME: ledger_user
+      DB_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:8080:8080"
+
+volumes:
+  postgres_data:

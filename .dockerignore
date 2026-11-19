@@ -1,0 +1,11 @@
+# prevents unnecessary local build files,
+# Git history, IDE config being sent to
+# Docker during the build.
+target/
+.git/
+.idea/
+*.iml
+
+.env
+.env.*
+!.env.example
