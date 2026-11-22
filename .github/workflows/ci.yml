@@ -29,4 +29,7 @@ jobs:
           cache: maven
 
       - name: Build and run tests
+        env:
+          APP_SECURITY_USERNAME: ci-test-admin
+          APP_SECURITY_PASSWORD: ci-test-password
         run: mvn --batch-mode verify
