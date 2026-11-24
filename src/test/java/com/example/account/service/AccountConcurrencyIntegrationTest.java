@@ -32,24 +32,26 @@ class AccountConcurrencyIntegrationTest {
     @Autowired
     private AccountRepository accountRepository;
 
+    // Concurrent deposits — no lost updates
     @Test
     void shouldPreventLostUpdatesDuringConcurrentDeposits() throws Exception {
 
-        // ARRANGE
+        // ARRANGE: Create an account with an initial balance of 500.00.
         AccountEntity account = accountRepository.save(
                 new AccountEntity("Test Account", new BigDecimal("500.00"))
         );
 
         Long accountId = account.getId();
 
-        // Creates a thread pool with 2 worker threads.
+        // Creates a thread pool with two worker threads.
         ExecutorService executor = Executors.newFixedThreadPool(2);
 
-        // Both workers wait at the gate before starting their deposits.
+        // Wait for both workers to signal readiness, then release them together.
         CountDownLatch readyGate = new CountDownLatch(2);
         CountDownLatch startGate = new CountDownLatch(1);
 
         try {
+            // Worker 1: Deposit 200.00 into the shared account.
             Callable<Account> deposit200 = () -> {
                 readyGate.countDown();
                 startGate.await();
@@ -59,6 +61,7 @@ class AccountConcurrencyIntegrationTest {
                 );
             };
 
+            // Worker 2: Deposit 300.00 into the same account.
             Callable<Account> deposit300 = () -> {
                 readyGate.countDown();
                 startGate.await();
@@ -75,14 +78,14 @@ class AccountConcurrencyIntegrationTest {
             // Wait until both workers are ready before releasing them.
             assertTrue(readyGate.await(5, TimeUnit.SECONDS));
 
-            // ACT: Allow both deposits to start.
+            // ACT: Release both workers to perform concurrent deposits.
             startGate.countDown();
 
-            // Wait for both operations to finish; propagate any failures.
+            // Wait for both deposits to finish; propagate any worker failures.
             first.get(10, TimeUnit.SECONDS);
             second.get(10, TimeUnit.SECONDS);
 
-            // ASSERT: Read the final balance from real PostgreSQL.
+            // ASSERT 1: The persisted balance reflects both deposits without lost updates.
             BigDecimal finalBalance = accountRepository.findById(accountId)
                     .orElseThrow()
                     .getBalance();
@@ -93,7 +96,8 @@ class AccountConcurrencyIntegrationTest {
             );
 
         } finally {
-            startGate.countDown(); // Release waiting workers if setup fails.
+            // Release any waiting workers and shut down the executor.
+            startGate.countDown();
             executor.shutdownNow();
         }
     }
