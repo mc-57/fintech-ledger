@@ -1,19 +1,23 @@
 # Funds Transfer Service
 
-**Project Status**: 🚧 In Development
+**Project Status**: 🚧 In Development | Deployed to cloud
 
 ## 📖 Overview 
-A Java Spring Boot backend for managing accounts,
-deposits, and funds transfers, with a focus on 
-transactional correctness and concurrency safety.
+A Java Spring Boot REST API for managing accounts, deposits, and funds transfers, with a focus on transactional correctness, 
+concurrency safety, and retry safety.
+
+The application is containerized, automatically tested through GitHub Actions, and deployed to the cloud. 
+It handles simulated funds and is not a production banking system.
 
 ## 🛠️ Tech Stack
-- Java, Spring Boot - REST API, request validation, transactional services
-- PostgreSQL - accounts, transfers, idempotency records, row-level locking
-- Spring Data JPA/Hibernate - database access and entity mapping
-- Flyway - versioned schema migrations
-- Maven, Postman, Git - build workflow, manual API verification, version control
-- JUnit 5, Mockito, Testcontainers - unit tests and PostgreSQL integration tests
+ Category | Technologies |
+| --- | --- |
+| Backend | Java 17, Spring Boot, Spring Security |
+| Database | PostgreSQL 16, Spring Data JPA, Hibernate, Flyway |
+| Testing | JUnit 5, Mockito, Testcontainers, MockMvc |
+| DevOps | Docker, Docker Compose, GitHub Actions |
+| Cloud hosting | Render, Neon|
+| Development tools | Maven, Git, Postman |
 
 ## ✅ Implemented features
 
@@ -21,46 +25,13 @@ transactional correctness and concurrency safety.
 | --- | --- |
 | Accounts | Create accounts, fetch one/all accounts, deposit funds |
 | Transfers | Transfer funds between accounts and retrieve transfer history |
-| Transaction safety | Single transaction covering account balance changes, transfer creation, and idempotency completion |
-| Concurrency | Pessimistic row locks on affected accounts, acquired in ascending account-ID order |
-| Retry safety | Atomic PostgreSQL idempotency-key reservation using `INSERT ... ON CONFLICT DO NOTHING` |
-| Replay behavior | Identical retries return the original transfer; same key with different payload returns `409 Conflict` |
-| Fingerprinting | SHA-256 fingerprint of sender ID, recipient ID, and normalized amount |
-| Cleanup | 24-hour idempotency retention with hourly scheduled removal of expired records |
-| Validation | Positive amounts, at most 17 integer digits and two decimal places, account creation validation |
-| Error handling | Structured JSON responses for validation, missing resources, insufficient funds, and idempotency conflicts |
-
-## 🔌 API endpoints
-
-| Method | Endpoint | Purpose |
-| --- | --- | --- |
-| `POST` | `/api/accounts` | Create an account |
-| `GET` | `/api/accounts` | List accounts |
-| `GET` | `/api/accounts/{id}` | Get account details |
-| `POST` | `/api/accounts/{id}/deposits` | Deposit money |
-| `POST` | `/api/transfers` | Transfer funds; requires `Idempotency-Key` header |
-| `GET` | `/api/transfers` | List transfers |
-| `GET` | `/api/transfers/{id}` | Get transfer details |
-
-### Example: create a transfer
-
-```http
-POST /api/transfers
-Content-Type: application/json
-Idempotency-Key: demo-transfer-001
-```
-
-```json
-{
-  "fromAccountId": 1,
-  "toAccountId": 2,
-  "amount": 200.00
-}
-```
-
-An identical retry with the same key returns the existing transfer rather than deducting the balance again.
-A different transfer payload using that key returns `409 Conflict`. 
-Existing records remain reserved for 24 hours; expired records are deleted by a scheduled job.
+| Transaction safety | Atomic balance updates, transfer recording, and idempotency reservation completion |
+| Concurrency | Pessimistic row-level locking to prevent lost updates |
+| Transfer idempotency | Atomic key reservation, identical-request replay, and conflicting-payload rejection |
+| Idempotency lifecycle | SHA-256 request fingerprinting, 24-hour key retention, and scheduled cleanup |
+| Validation and errors | Request validation and structured business error responses |
+| Authentication | Stateless HTTP Basic authentication with a single in-memory administrator and BCrypt password hashing |
+| Health check | Public `/healthz` endpoint for basic application availability |
 
 ## 🧠 Key Engineering Decisions
 
@@ -80,40 +51,33 @@ produces a conflict. If the initial transaction fails, its reservation rolls bac
 
 ## 🧪 Testing
 
-**Automated tests**
-- **Unit (JUnit 5 + Mockito):** successful transfers, insufficient funds, self-transfer rejection, idempotency conflicts, and identical-request replay.
-- **PostgreSQL integration (Spring Boot + Testcontainers):** committed balance updates, rollback on transfer-recording failure, persisted transfer/idempotency linkage, and expired-key cleanup that preserves transfer history.
+Automated coverage includes service unit tests, PostgreSQL integration tests, concurrency integration tests, 
+and HTTP security tests.
 
-**Manual concurrency verification**
+Concurrency tests verify lost-update prevention for deposits and transfers, identical-request replay, and same-key conflicts 
+using real PostgreSQL through Testcontainers. 
+GitHub Actions builds and tests the application on pushes to `main` and pull requests targeting `main`.
 
-- Reproduced a lost-update issue with concurrent transfers before adding row locks; verified locking prevented the inconsistent outcome.
-- Verified concurrent deposits and simultaneous deposit/transfer operations preserver expected balances.
-- Verified two simultaneous requests using the same idempotency key and identical payload returned the same transfer ID with one commited transfer.
-- Verified that the same key with a different payload produces an idempotency conflict.
+## ☁️ Cloud Deployment
 
-> Manual concurrency scenarios have been exercised; repeatable **automated concurrency tests** are 
-> still planned. Integration tests use a temporary real PostgreSQL database, not the development database.
+The application is deployed on Render with a managed PostgreSQL database hosted on Neon.
 
-## 🗺️ Current limitations and roadmap
+**Live API:** [Health Check](https://fintech-ledger-8ges.onrender.com/healthz)
+
+Financial endpoints are protected by HTTP Basic authentication. 
+The free hosting instance may require a cold start after periods of inactivity.
+
+## 🗺️ Roadmap
 
 ### Near-term priorities
-- Automated concurrency tests for concurrent transfers, deposits, and same-key requests
 - Deposit history and idempotent deposits
-- Pagination for list endpoints
-- Docker Compose and GitHub Actions CI
-- Better lock-timeout and cleanup-job operational handling
+- Pagination, filtering, and sorting
+- Individual user registration and authentication
+- Account ownership and resource-level authorization
 
 ### Longer-term improvements
-- Authentication and authorization
-- Durable business-operation IDs for retries beyond the 24-hour idempotency retention window
-- Double-entry accounting, reconciliation, and stronger financial auditability
-- Observability and a minimal UI 
-
-**Important design limitation**: After an expired idempotency record is cleaned up, a late client retry with the same key can create a new transfer. 
-A durable business operation identifier and client retry policy are not implemented yet.
-
-## 📌 Project status
-This repository is actively developed in small, independently reviewed increments. 
-The focus is on backend correctness and explaining the design decisions, not claiming 
-production readiness before security, tests, and operational safeguards are complete.
-
+- Durable business-operation identifiers and retry policies
+- Double-entry accounting and reconciliation
+- Observability and application monitoring
+- React + TypeScript frontend
+- Automated deployment pipeline
