@@ -81,3 +81,8 @@ The free hosting instance may require a cold start after periods of inactivity.
 - Observability and application monitoring
 - React + TypeScript frontend
 - Automated deployment pipeline
+
+## 📚 Documentation
+
+- [System Architecture](docs/ARCHITECTURE.md)
+- [API Reference](docs/API.md)
