@@ -5,13 +5,21 @@ import com.example.transfer.exception.IdempotencyConflictException;
 import com.example.transfer.exception.InsufficientFundsException;
 import com.example.transfer.exception.InvalidAccountTransferException;
 import com.example.transfer.exception.TransferNotFoundException;
+import com.example.user.exception.EmailAlreadyExistsException;
+import com.example.user.exception.InvalidPasswordException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
+
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -54,21 +62,23 @@ public class GlobalExceptionHandler {
     */
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<ApiError> handleValidationException(
+    public ResponseEntity<ValidationApiError> handleValidationException(
             MethodArgumentNotValidException ex) {
 
-        // Extract the first validation error message
-        String message = ex.getBindingResult()
-                .getFieldErrors()
-                .stream()
-                .findFirst()
-                .map(error -> error.getDefaultMessage())
-                .orElse("Invalid Request");
+        Map<String, List<String>> fieldErrors = new LinkedHashMap<>();
 
-        ApiError response = new ApiError(
+        // Group all validation messages by field name.
+        for (FieldError error: ex.getBindingResult().getFieldErrors()) {
+            fieldErrors
+                    .computeIfAbsent(error.getField(), key -> new ArrayList<>())
+                    .add(error.getDefaultMessage());
+        }
+
+        ValidationApiError response = new ValidationApiError(
                 400,
                 "VALIDATION_ERROR",
-                message
+                "Request validation failed",
+                fieldErrors
         );
 
         return ResponseEntity.badRequest().body(response);
@@ -137,5 +147,31 @@ public class GlobalExceptionHandler {
         );
 
         return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
+    }
+
+    @ExceptionHandler(EmailAlreadyExistsException.class)
+    public ResponseEntity<ApiError> handleEmailAlreadyExists(
+            EmailAlreadyExistsException ex) {
+
+        ApiError response = new ApiError(
+                409,
+                "EMAIL_ALREADY_EXISTS",
+                ex.getMessage()
+        );
+
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
+    }
+
+    @ExceptionHandler(InvalidPasswordException.class)
+    public ResponseEntity<ApiError> handleInvalidPassword(
+            InvalidPasswordException ex) {
+
+        ApiError response = new ApiError(
+                400,
+                "INVALID_PASSWORD",
+                ex.getMessage()
+        );
+
+        return ResponseEntity.badRequest().body(response);
     }
 }
